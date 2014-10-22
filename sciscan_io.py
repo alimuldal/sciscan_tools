@@ -3,12 +3,16 @@ import numpy as np
 import sys
 import warnings
 
+# frames stored as big-endian uint16
+DTYPE = np.dtype('>u2')
+
 
 class SciScanStack(object):
 
     def __init__(self, dirpath, mode='r'):
         """
-        Read in a SciScan raw image stack as a memory-mapped numpy array
+        Wraps a Scientifica SciScan raw image stack as a memory-mapped numpy
+        array
 
         Parameters
         --------------
@@ -16,7 +20,7 @@ class SciScanStack(object):
             path to the directory containing the '.ini' and '.raw' files
 
         mode: str
-            mode for opening the memmap array, see np.memmap
+            mode for opening the memmap array, see docs for np.memmap
 
         Attributes
         --------------
@@ -37,7 +41,6 @@ class SciScanStack(object):
 
         """
 
-
         ini_path, raw_path = None, None
 
         for ff in os.listdir(dirpath):
@@ -50,7 +53,7 @@ class SciScanStack(object):
         if None in (ini_path, raw_path):
             raise ValueError(
                 'directory must contain both a ".raw" and a ".ini" file'
-                )
+            )
 
         self.raw_path = raw_path
         self.ini_path = ini_path
@@ -62,10 +65,12 @@ class SciScanStack(object):
                     key, val = (vv.strip() for vv in line.split('='))
                     if val not in ("", '""'):
                         key = key.replace('.', '_')
+                        key = key.replace('__', '_')
                         metadata.update(
-                            {key:str2num(replace_problem_chars(val))}
-                            )
+                            {key: str2num(replace_problem_chars(val))}
+                        )
                 except ValueError:
+                    # skip any lines that aren't 'key = value' pairs
                     continue
         self.metadata = metadata
 
@@ -74,20 +79,41 @@ class SciScanStack(object):
 
         nx = int(metadata.x_pixels)
         ny = int(metadata.y_pixels)
-        nframes = int(metadata.frame_count)
+        nc = int(metadata.no_of_channels)
+        nframes = int(metadata.no_of_frames_to_acquire)
 
-        self.shape = (nframes, nx, ny)
-        self.dim_names = 'T', 'Y', 'X'
+        if nc > 1:
+            shape = (nframes, nc, ny, nx)
+            dim_names = 'T', 'C', 'Y', 'X'
+        else:
+            shape = (nframes, ny, nx)
+            dim_names = 'T', 'Y', 'X'
+
+        # check file size (bytes)
+        nbytes = os.stat(self.raw_path).st_size
+        expected_nbytes = np.prod(shape) * DTYPE.itemsize
+        if nbytes > expected_nbytes:
+            # this can be OK as long as either expected < actual, or the file
+            # is writeable (and can therefore be padded to the expected size)
+            warnings.warn('mismatch between actual (%i B) and expected (%i B) '
+                          'file sizes - the ".ini" metadata may be inaccurate.'
+                          % (nbytes, expected_nbytes))
+
+        self.shape = shape
+        self.dim_names = dim_names
 
         # an mmap'ed array of frames (this could even be writeable...)
-        self.frames = np.memmap(self.raw_path, dtype='>u2',
-                                offset=0, mode=mode, shape=self.shape)
+        self.frames = np.memmap(self.raw_path, dtype=DTYPE, offset=0,
+                                mode=mode, shape=self.shape)
 
 
 def replace_problem_chars(s):
     rules = [
         ('"', ''),
         ('..', '.'),
+        ('(', ''),
+        (')', ''),
+        ('-', ''),
     ]
     for old, new in rules:
         s = s.replace(old, new)
@@ -95,6 +121,7 @@ def replace_problem_chars(s):
 
 
 class Bunch(dict):
+
     """
     a dict-like container whose elements can be accessed as class attributes
     """
@@ -119,13 +146,18 @@ def str2num(s):
     bool > int > float > string
     """
 
-    if s.lower() in ('true', 'false'):
-        return bool(s)
+    s = str(s)
+
+    if s.lower() == 'true':
+        return True
+    elif s.lower() == 'false':
+        return False
     else:
-        try:
-            return int(s)
-        except ValueError:
+        for tt in (int, float):
             try:
-                return float(s)
+                return tt(s)
             except ValueError:
-                return s
+                continue
+
+    # if all else fails, return the string
+    return s
