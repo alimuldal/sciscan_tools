@@ -58,6 +58,8 @@ class SciScanStack(object):
         self.raw_path = raw_path
         self.ini_path = ini_path
 
+        # read in the metadata
+        # ---------------------------------------------------------------------
         metadata = Bunch()
         with open(self.ini_path, 'r') as f:
             for line in f:
@@ -74,22 +76,51 @@ class SciScanStack(object):
                     continue
         self.metadata = metadata
 
-        if self.metadata.experiment_type != 'XYT':
-            warnings.warn('currently only single-channel XYT is supported')
+        shape = tuple()
+        dim_names = tuple()
 
-        nx = int(metadata.x_pixels)
+        # x/y dimensions
+        # ---------------------------------------------------------------------
         ny = int(metadata.y_pixels)
-        nc = int(metadata.no_of_channels)
-        nframes = int(metadata.no_of_frames_to_acquire)
+        nx = int(metadata.x_pixels)
+        shape = (ny, nx) + dim_names
+        dim_names = ('Y', 'X') + dim_names
 
+        # number of channels
+        # ---------------------------------------------------------------------
+        nc = 0
+        for cc in xrange(1, 6):
+            if metadata['save_ch_%i' % cc]:
+                nc += 1
+        # # this is unreliable - probably gives the total # of channels the
+        # # scope is configured for, rather than the # in the stack
+        # nc = int(metadata.no_of_channels)
         if nc > 1:
-            shape = (nframes, nc, ny, nx)
-            dim_names = 'T', 'C', 'Y', 'X'
+            shape = (nc,) + shape
+            dim_names = ('C',) + dim_names
+
+        # z-planes and timesteps
+        # ---------------------------------------------------------------------
+        expt_type = self.metadata.experiment_type
+        if expt_type == 'XYT':
+            nz = 1
+            nt = int(metadata.no_of_frames_to_acquire)
+        elif expt_type == 'XYTZ':
+            nz = int(metadata.no_of_planes)
+            nt = int(metadata.frames_per_plane)
         else:
-            shape = (nframes, ny, nx)
-            dim_names = 'T', 'Y', 'X'
+            warnings.warn('unsupported experiment type: %s' % expt_type)
+            nz = 1
+            nt = int(metadata.no_of_frames_to_acquire)
+        if nt > 1:
+            shape = (nt,) + shape
+            dim_names = ('T',) + dim_names
+        if nz > 1:
+            shape = (nz,) + shape
+            dim_names = ('Z',) + dim_names
 
         # check file size (bytes)
+        # ---------------------------------------------------------------------
         nbytes = os.stat(self.raw_path).st_size
         expected_nbytes = np.prod(shape) * DTYPE.itemsize
         if nbytes > expected_nbytes:
@@ -103,6 +134,7 @@ class SciScanStack(object):
         self.dim_names = dim_names
 
         # an mmap'ed array of frames (this could even be writeable...)
+        # ---------------------------------------------------------------------
         self.frames = np.memmap(self.raw_path, dtype=DTYPE, offset=0,
                                 mode=mode, shape=self.shape)
 
