@@ -1,7 +1,8 @@
 import os
 import numpy as np
 import sys
-import warnings
+import copy
+
 
 # frames stored as big-endian uint16
 DTYPE = np.dtype('>u2')
@@ -58,6 +59,7 @@ class SciScanStack(object):
         self.raw_path = raw_path
         self.ini_path = ini_path
 
+
         # read in the metadata
         # ---------------------------------------------------------------------
         metadata = Bunch()
@@ -66,8 +68,7 @@ class SciScanStack(object):
                 try:
                     key, val = (vv.strip() for vv in line.split('='))
                     if val not in ("", '""'):
-                        key = key.replace('.', '_')
-                        key = key.replace('__', '_')
+                        key = replace_problem_chars(key.replace('.', '_'))
                         metadata.update(
                             {key: str2num(replace_problem_chars(val))}
                         )
@@ -75,6 +76,7 @@ class SciScanStack(object):
                     # skip any lines that aren't 'key = value' pairs
                     continue
         self.metadata = metadata
+
 
         shape = tuple()
         dim_names = tuple()
@@ -109,7 +111,7 @@ class SciScanStack(object):
             nz = int(metadata.no_of_planes)
             nt = int(metadata.frames_per_plane)
         else:
-            warnings.warn('unsupported experiment type: %s' % expt_type)
+            print('unsupported experiment type: %s' % expt_type)
             nz = 1
             nt = int(metadata.no_of_frames_to_acquire)
         if nt > 1:
@@ -121,14 +123,17 @@ class SciScanStack(object):
 
         # check file size (bytes)
         # ---------------------------------------------------------------------
-        nbytes = os.stat(self.raw_path).st_size
+        stat = os.stat(self.raw_path)
+        self.nbytes = stat.st_size
+
         expected_nbytes = np.prod(shape) * DTYPE.itemsize
-        if nbytes > expected_nbytes:
+
+        if self.nbytes != expected_nbytes:
             # this can be OK as long as either expected < actual, or the file
             # is writeable (and can therefore be padded to the expected size)
-            warnings.warn('mismatch between actual (%i B) and expected (%i B) '
-                          'file sizes - the ".ini" metadata may be inaccurate.'
-                          % (nbytes, expected_nbytes))
+            print('Mismatch between actual (%i B) and expected (%i B) '
+                  'file sizes - the ".ini" metadata is probably inaccurate!'
+                  % (self.nbytes, expected_nbytes))
 
         self.shape = shape
         self.dim_names = dim_names
@@ -146,6 +151,7 @@ def replace_problem_chars(s):
         ('(', ''),
         (')', ''),
         ('-', ''),
+        ('__', '_')
     ]
     for old, new in rules:
         s = s.replace(old, new)
@@ -168,6 +174,9 @@ class Bunch(dict):
     def __setstate__(self, state):
         self.update(state)
         self.__dict__ = self
+
+    def copy(self):
+        return copy.copy(self)
 
 
 def str2num(s):
