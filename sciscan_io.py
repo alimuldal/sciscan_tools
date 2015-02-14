@@ -56,6 +56,7 @@ class SciScanStack(object):
                 'directory must contain both a ".raw" and a ".ini" file'
             )
 
+        self.base_path = dirpath
         self.raw_path = raw_path
         self.ini_path = ini_path
 
