@@ -164,23 +164,27 @@ class Movie(object):
         height = 2 * int((width / 2.) * aspect)
 
         # spawn an ffmpeg process - we're going to pipe the frames
-        # directly to ffmpeg as .pngs
-        cmd = ['ffmpeg', '-y',
+        # directly to ffmpeg as raw bytes
+
+        cmd = [
+                # global options
+               'ffmpeg', '-y',
                '-loglevel', 'verbose',
 
+               # input options
                '-f', 'rawvideo',
-               '-pixel_format', 'rgb24',
-               # '-f', 'image2pipe',
-               # '-vcodec','png',
+               '-pix_fmt', 'bgr24',
                '-r', '%d' % fps,
                '-s', '%ix%i' % (w, h),
                '-i', 'pipe:0',
 
+               # output options
                '-vcodec', codec,
                '-an',
-               # '-b:v', '%ik' %kbitrate,
+               '-pix_fmt', 'rgb24', # NB: need to reverse channel order!
                '-s', '%ix%i' % (width, height),
-               fname]
+               fname
+               ]
 
         # print ' '.join(cmd)
 
