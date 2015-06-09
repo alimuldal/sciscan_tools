@@ -133,8 +133,8 @@ class SciScanStack(object):
             # this can be OK as long as either expected < actual, or the file
             # is writeable (and can therefore be padded to the expected size)
             print('Mismatch between actual (%i B) and expected (%i B) '
-                  'file sizes - the ".ini" metadata is probably inaccurate!'
-                  % (self.nbytes, expected_nbytes))
+                  'file sizes - metadata in "%s" is probably inaccurate!'
+                  % (self.nbytes, expected_nbytes, ini_path))
 
         self.shape = shape
         self.dim_names = dim_names
